@@ -165,14 +165,14 @@ With the `database` and `kubernetes_cluster` connection, the `connections.json` 
 
 While this `connections.json` file contains all the necessary data for the postgres configuration, it isn't formatted properly and there is significantly more data than needed by the chart. The entire `kubernetes_cluster` block isn't used by the Helm chart at all (it is only needed to provide the provisioner with authentication information to the Kubernetes cluster). Let's create a `connections.jq` file to remove the `kubernetes_cluster` connection, and restructure the `database` connection so that it fits the helm chart's expected `postgres` block.
 
-```json connections.jq
+```jq connections.jq
 {
-    postgres: {
-        hostname: .database.data.authentication.hostname
-        port: .database.data.authentication.port
-        user: .database.data.authentication.username
-        password: .database.data.authentication.password
-        version: .database.specs.version
+    "postgres": {
+        "hostname": .database.data.authentication.hostname
+        "port": .database.data.authentication.port
+        "user": .database.data.authentication.username
+        "password": .database.data.authentication.password
+        "version": .database.specs.version
     }
 }
 ```
@@ -333,7 +333,7 @@ In this case, the input to the `artifact_api_endpoint.jq` template file would be
 
 We need to build an API artifact from these inputs. We'll use Kubernetes built in DNS pattern for services to build the API endpoint from the service name, namespace and port. Thus, the `artifact_api_endpoint.jq` file would be:
 
-```json
+```jq
 {
     "data": {
         "api": {
