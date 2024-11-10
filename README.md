@@ -48,7 +48,7 @@ postgres:
     version: "12.1"
 ```
 
-To properly set these values in a Massdriver bundle, we likely would want the labels to come from [`md_metadata.default_tags`](https://docs.massdriver.cloud/bundles/development#massdriver-metadata), the `foo` value to come from params, and the `postgres` block to come from a connection. That means this bundle would require a `massdriver/postgres-authentication` connection named `database`. Since this is a Helm chart, it will also need a `massdriver/kubernetes-cluster` connection to provide authentication to the kubernetes cluster the chart is being installed into. The `massdriver.yaml` file would look something like:
+To properly set these values in a Massdriver bundle, we likely would want the `commonLabels` value to come from [`md_metadata.default_tags`](https://docs.massdriver.cloud/bundles/development#massdriver-metadata), the `foo` value to come from params, and the `postgres` block to come from a connection. That means this bundle would require a `massdriver/postgres-authentication` connection named `database`. Since this is a Helm chart, it will also need a `massdriver/kubernetes-cluster` connection to provide authentication to the kubernetes cluster the chart is being installed into. The `massdriver.yaml` file would look something like:
 
 ```yaml massdriver.yaml
 params:
@@ -88,12 +88,12 @@ Let's start with the `params.json`, which will look like:
     "md_metadata": {
         "default_tags": {
             "managed-by": "massdriver",
-            "md-manifest": "man",
-            "md-package": "proj-env-man-0000",
+            "md-manifest": "somebundle",
+            "md-package": "proj-env-somebundle-0000",
             "md-project": "proj",
             "md-target": "env"
         },
-        "name_prefix": "proj-env-man-0000"
+        "name_prefix": "proj-env-somebundle-0000"
         ...
     }
 }
@@ -110,13 +110,13 @@ This JQ command takes all of the original JSON and adds the field `commonLabels`
 ```yaml params.yaml
 commonLabels:
     managed-by: "massdriver",
-    md-manifest: "man",
-    md-package: "proj-env-man-0000",
+    md-manifest: "somebundle",
+    md-package: "proj-env-somebundle-0000",
     md-project: "proj",
     md-target: "env"
 foo:
-    bar: "baz"
-    count: 4
+    bar: "bizzle"
+    count: 10
 ```
 
 This fits what the helm chart expects. Now let's focus on connections.
@@ -192,7 +192,7 @@ This converts the data in `connections.json` to match the expected fields in `va
 
 ## Artifacts
 
-After every provision, this provider will scan the template directory for files matching the pattern `artifact_<name>.jq`. If a file matching this pattern is present, it will be used as a JQ template to render and publish a Massdriver artifact. The inputs to the JQ template will be a JSON object with the params, connections and [helm manifests](https://helm.sh/docs/helm/helm_get_manifest/) as top level fields. Note that the `params` and `connections` will contain the original content of `params.json` and `connections.json`, without any modifications that may have been applied through `params.jq` and `connections.jq`. Since the output of `helm get manifest` is list of yaml files, the `outputs` block will be a JSON array with each element being an individual kubernetes resource manifest.
+After every provision, this provider will scan the template directory for files matching the pattern `artifact_<name>.jq`. If a file matching this pattern is present, it will be used as a JQ template to render and publish a Massdriver artifact. The inputs to the JQ template will be a JSON object with the params, connections and [helm manifests](https://helm.sh/docs/helm/helm_get_manifest/) as top level fields. Note that the `params` and `connections` will contain the original content of `params.json` and `connections.json`, without any modifications that may have been applied through `params.jq` and `connections.jq`. The `outputs` field will contain the result of `helm get manifest` for the chart after it is installed. Since the output of `helm get manifest` is list of yaml files, the `outputs` block will be a JSON array with each element being a JSON object of an individual kubernetes resource manifest.
 
 ```json
 {
@@ -208,167 +208,146 @@ After every provision, this provider will scan the template directory for files 
 }
 ```
 
-To demonstrate, let's say there is a Azure Storage Account bundle with a single param (`region`), a single connection (`azure_service_principal`), and a single artifact (`storage_account`). The `massdriver.yaml` would be similar to:
+To demonstrate, let's say there is a Helm bundle with a single param (`namespace`), a single connection (`kubernetes_cluster`), and a single artifact (`api_endpoint`). The `massdriver.yaml` would be similar to:
 
 
 ```yaml massdriver.yaml
 params:
   required:
-    - region
+    - namespace
   properties:
-    region:
+    namespace:
       type: string
 
 connections:
   required:
-    - azure_service_principal
+    - kubernetes_cluster
   properties:
-    azure_service_principal:
-      $ref: massdriver/azure-service-principal
+    kubernetes_cluster:
+      $ref: massdriver/kubernetes-cluster
 
 artifacts:
   required:
-    - storage_account
+    - api_endpoint
   properties:
-    storage_account:
-      $ref: massdriver/azure-storage-account-blob
+    api_endpoint:
+      $ref: massdriver/api
 ```
 
-In this example a file named `artifact_storage_account.jq` would need to be in the template directory and the provisioner would use this file as a JQ template, passing the params, connections and outputs to it. There are two approaches to building the proper artifact structure:
-1. Fully render the artifact in the Bicep output
-2. Build the artifact structure using the JQ template
+In this example a file named `artifact_api_endpoint.jq` would need to be in the template directory and the provisioner would use this file as a JQ template, passing the params, connections and outputs to it. For this example, let's say the helm chart will produce two manifests: a `deployment`, and a `service`. The output of `helm get manifest` would be something like:
 
-Here are examples of each approach.
-
-#### Fully Render as Bicep Output
-
-If you choose to fully render the artifact in a Bicep output, it would be similar to:
-
-```bicep
-param region string
-
-resource storageAccount 'Microsoft.Storage/storageAccounts@2021-04-01' = {
-  ...
-}
-
-output artifact_storage_account object = {
-    data:  {
-        infrastructure: {
-            ari: storageAccount.id
-            endpoint: storageAccount.properties.primaryEndpoints.blob
-        }
-        security: {}
-    }
-    specs: {
-        azure: {
-            region: region
-        }
-    }
-}
+```yaml
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: helm-prov-example-0000
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 80
+      protocol: TCP
+      name: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: helm-prov-example-0000
+spec:
+  template:
+    spec:
+      containers:
+        - name: nginx
+          image: "nginx:latest"
+          imagePullPolicy: Always
 ```
 
-In this case, the input to the `artifact_storage_account.jq` template file would be:
+In this case, the input to the `artifact_api_endpoint.jq` template file would be:
 
 ```json
 {
     "params": {
-        "region": "eastus"
+        "namespace": "foo"
     },
     "connections": {
-        "azure_service_principal": {
+        "kubernetes_cluster": {
             "data": {
-                "client_id": "00000000-1111-2222-3333-444444444444",
-                "client_secret": "s0mes3cr3tv@lue",
-                "subscription_id": "00000000-1111-2222-3333-444444444444",
-                "tenant_id": "00000000-1111-2222-3333-444444444444"
-            }
-        }
-    },
-    "outputs": {
-        "artifact_storage_account": {
-            "value": {
-                "data": {
-                    "infrastructure": {
-                        "ari": "/subscriptions/00000000-1111-2222-3333-444444444444/resourceGroups/resource-group-name/providers/Microsoft.Storage/storageAccounts/storageaccountname",
-                        "endpoint": "https://storageaccountname.blob.core.windows.net/"
+                "authentication": {
+                    "cluster": {
+                        "certificate-authority-data": "...",
+                        "server": "https://my.kubernetes.cluster.com"
                     },
-                    "security": {}
-                },
-                "specs": {
-                    "azure": {
-                        "region": "eastus"
+                    "user": {
+                        "token": "..."
                     }
+                }
+            },
+            "specs": {
+                "kubernetes": {
+                    "version": "1.27"
                 }
             }
         }
-    }
-}
-```
-
-Thus, the `artifact_storage_account.jq` file would simply be:
-
-```json
-.outputs.artifact_storage_account.value
-```
-
-#### Build Artifact in JQ Template
-
-Alternatively, you can build the artifact structure using the JQ template. This approach is best if you are attempting to minimize changes to your Bicep template. With this approach, you would need to output the storage account ID and endpoint.
-
-```bicep
-resource storageAccount 'Microsoft.Storage/storageAccounts@2021-04-01' = {
-  ...
-}
-
-output storageAccountId string = storageAccount.id
-output storageAccountEndpoint string = storageAccount.properties.primaryEndpoints.blob
-```
-
-In this case, the input to the `artifact_storage_account.jq` template file would be:
-
-```json
-{
-    "params": {
-        "region": "eastus"
     },
-    "connections": {
-        "azure_service_principal": {
-            "data": {
-                "client_id": "00000000-1111-2222-3333-444444444444",
-                "client_secret": "s0mes3cr3tv@lue",
-                "subscription_id": "00000000-1111-2222-3333-444444444444",
-                "tenant_id": "00000000-1111-2222-3333-444444444444"
+    "outputs": [
+        {
+            "apiVersion": "v1",
+            "kind": "Service",
+            "metadata": {
+                "name": "helm-prov-example-0000"
+            },
+            "spec": {
+                "type": "ClusterIP",
+                "ports": [{
+                    "port": 80,
+                    "targetPort": 80,
+                    "protocol": "TCP",
+                    "name": "http"
+                }]
+            }
+        },
+        {
+            "apiVersion": "apps/v1",
+            "kind": "Deployment",
+            "metadata": {
+                "name": "helm-prov-example-0000"
+            },
+            "spec": {
+                "template": {
+                "spec": {
+                    "containers": [
+                    {
+                        "name": "nginx",
+                        "image": "nginx:latest",
+                        "imagePullPolicy": "Always"
+                    }
+                    ]
+                }
+                }
             }
         }
-    },
-    "outputs": {
-        "storageAccountEndpoint": {
-            "type": "String",
-            "value": "https://storageaccountname.blob.core.windows.net/"
-        },
-        "storageAccountId": {
-            "type": "String",
-            "value": "/subscriptions/00000000-1111-2222-3333-444444444444/resourceGroups/resource-group-name/providers/Microsoft.Storage/storageAccounts/storageaccountname"
-        }
-    }
+    ]
 }
 ```
 
-Now the artifact structure must be built through the `artifact_storage_account.jq` template:
+We need to build an API artifact from these inputs. We'll use Kubernetes built in DNS pattern for services to build the API endpoint from the service name, namespace and port. Thus, the `artifact_api_endpoint.jq` file would be:
 
 ```json
 {
-    "data":  {
-        "infrastructure": {
-            "ari": .outputs.storageAccountId.value,
-            "endpoint": .outputs.storageAccountEndpoint.value
-        },
-        "security": {}
+    "data": {
+        "api": {
+            "hostname": "\(.outputs[] | select(.kind == "Service" and .apiVersion == "v1") | .metadata.name).\(.params.namespace).svc.cluster.local",
+            "port": (.outputs[] | select(.kind == "Service" and .apiVersion == "v1") | .spec.ports[] | select(.name == "http") | .port),
+            "protocol": "http"
+        }
     },
     "specs": {
-        "azure": {
-            "region": .params.region
+        "api": {
+            "version": "1.0.0"
         }
     }
 }
 ```
+
+In this template, we are using the [`select` function in JQ](https://jqlang.github.io/jq/manual/#select) to find the proper manifest and extract the relevant values to build a properly formatted artifact.
