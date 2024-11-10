@@ -15,6 +15,27 @@ name_prefix=$(jq -r '.md_metadata.name_prefix' "$params_path")
 release_name=$(jq -r --arg name_prefix "$name_prefix" '.release_name // $name_prefix' "$config_path")
 namespace=$(jq -r '.namespace // "default"' "$config_path")
 
+# Extract Checkov configuration
+checkov_enabled=$(jq -r '.checkov.enable // true' "$config_path")
+checkov_quiet=$(jq -r '.checkov.quiet // true' "$config_path")
+checkov_halt_on_failure=$(jq -r '.checkov.halt_on_failure // false' "$config_path")
+
+evaluate_checkov() {
+    if [ "$checkov_enabled" = "true" ]; then
+        echo "Evaluating Checkov policies..."
+        checkov_flags=""
+
+        if [ "$checkov_quiet" = "true" ]; then
+            checkov_flags+=" --quiet"
+        fi
+        if [ "$checkov_halt_on_failure" = "false" ]; then
+            checkov_flags+=" --soft-fail"
+        fi
+
+        checkov -d . --framework helm --var-file params_values.yaml --var-file connections_values.yaml $checkov_flags
+    fi
+}
+
 # Extract auth
 # Try to get Kubernetes authentication from config.json, then fall back to connections.json
 k8s_auth=$(jq -r '.kubernetes_cluster // empty' "$config_path" 2>/dev/null || true)
@@ -69,10 +90,12 @@ helm_command=""
 case "$MASSDRIVER_DEPLOYMENT_ACTION" in
 
   plan)
+    evaluate_checkov
     helm_command="upgrade $release_name . --dry-run -i --namespace $namespace --create-namespace -f connections_values.yaml -f params_values.yaml --debug --wait"
     ;;
 
   provision)
+    evaluate_checkov
     helm_command="upgrade $release_name . -i --namespace $namespace --create-namespace -f connections_values.yaml -f params_values.yaml --debug --wait"
     ;;
 
