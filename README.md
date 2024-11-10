@@ -19,6 +19,7 @@ The following configuration options are available:
 
 | Configuration Option | Type | Default | Description |
 |-|-|-|-|
+| `kubernetes_cluster` | object | `.connections.kubernetes_cluster` | `jq` path to a `massdriver/kubernetes-cluster` connection for authentication to Kubernetes |
 | `namespace` | string | `"default"` | Kubernetes namespace to install the chart into. Defaults to the `default` namespace |
 | `release_name` | string | \<package name> | Specifies the release name for the helm chart. Defaults to the Massdriver package name if not specified. |
 | `checkov.enable` | boolean | `true` | Enables Checkov policy evaluation. If `false`, Checkov will not be run. |
