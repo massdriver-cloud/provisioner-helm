@@ -101,7 +101,7 @@ Let's start with the `params.json`, which will look like:
 
 The `foo` object can be passed directly to helm chart since it already matches the structure in `values.yaml`. However, we want set `commonLabels` to `md_metadata.default_tags`, and we'd also like to remove the rest of `md_metadata` from the params since it isn't expected by the helm chart and could cause issues in the unlikely event there is a naming collision with an existing value named `md_metadata`. This means the `params.jq` file should contain:
 
-```json params.jq
+```jq params.jq
 . += {"commonLabels": .md_metadata.default_tags} | del(.md_metadata)
 ```
 
