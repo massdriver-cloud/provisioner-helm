@@ -235,7 +235,7 @@ artifacts:
       $ref: massdriver/api
 ```
 
-In this example a file named `artifact_api_endpoint.jq` would need to be in the template directory and the provisioner would use this file as a JQ template, passing the params, connections and outputs to it. For this example, let's say the helm chart will produce two manifests: a `deployment`, and a `service`. The output of `helm get manifest` would be something like:
+Since the artifact is named `api_endpoint` a file named `artifact_api_endpoint.jq` would need to be in the template directory and the provisioner would use this file as a JQ template, passing the params, connections and outputs to it. For this example, let's say the helm chart will produce two manifests: a `deployment`, and a `service`. The output of `helm get manifest` would be something like:
 
 ```yaml
 ---
