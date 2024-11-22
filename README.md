@@ -47,11 +47,18 @@ postgres:
     user: "root"
     password: ""
     version: "12.1"
+
+deployment:
+    envs: {}
 ```
 
 To properly set these values in a Massdriver bundle, we likely would want the `commonLabels` value to come from [`md_metadata.default_tags`](https://docs.massdriver.cloud/bundles/development#massdriver-metadata), the `foo` value to come from params, and the `postgres` block to come from a connection. That means this bundle would require a `massdriver/postgres-authentication` connection named `database`. Since this is a Helm chart, it will also need a `massdriver/kubernetes-cluster` connection to provide authentication to the kubernetes cluster the chart is being installed into. The `massdriver.yaml` file would look something like:
 
 ```yaml massdriver.yaml
+app:
+  envs:
+    LOG_LEVEL: '@text "debug"'
+
 params:
   required:
     - foo
@@ -191,9 +198,40 @@ postgres:
 
 This converts the data in `connections.json` to match the expected fields in `values.yaml`.
 
+### envs.jq
+
+The last file to address is the environment variables. The `envs.json` file will look like:
+
+```json envs.json
+{
+    "LOG_LEVEL": "debug"
+}
+```
+
+There are two problems here. First, by default this provisioner will place the envs under a top level `envs` block, while the helm chart is expecting them under `deployment.envs`. Second, most Helm charts expect the environment variables to be an array of objects with `name` and `values` keys, as opposed to a map. So, let's convert our `envs.json` into an array of objects, and move it under a `deployment.envs` path.
+
+```jq connections.jq
+{
+    deployment: {
+        envs: [to_entries[] | {name: .key, value: .value}]
+    }
+}
+```
+
+This will restructure the data so that the `envs.yaml` file passed to helm will be:
+
+```yaml connections.yaml
+deployment:
+  envs:
+    - name: "LOG_LEVEL"
+      value: "debug"
+```
+
+This converts the data in `envs.json` to match the expected field in `values.yaml`.
+
 ## Artifacts
 
-After every provision, this provider will scan the template directory for files matching the pattern `artifact_<name>.jq`. If a file matching this pattern is present, it will be used as a JQ template to render and publish a Massdriver artifact. The inputs to the JQ template will be a JSON object with the params, connections and [helm manifests](https://helm.sh/docs/helm/helm_get_manifest/) as top level fields. Note that the `params` and `connections` will contain the original content of `params.json` and `connections.json`, without any modifications that may have been applied through `params.jq` and `connections.jq`. The `outputs` field will contain the result of `helm get manifest` for the chart after it is installed. Since the output of `helm get manifest` is list of yaml files, the `outputs` block will be a JSON array with each element being a JSON object of an individual kubernetes resource manifest.
+After every provision, this provider will scan the template directory for files matching the pattern `artifact_<name>.jq`. If a file matching this pattern is present, it will be used as a JQ template to render and publish a Massdriver artifact. The inputs to the JQ template will be a JSON object with the params, connections, envs, secrets and [helm manifests](https://helm.sh/docs/helm/helm_get_manifest/) as top level fields. Note that the `params`, `connections`, `envs` and `secrets` will contain the original content of `params.json`, `connections.json`, `envs.json` and `secrets.json` without any modifications that may have been applied through `params.jq`, `connections.jq`, `envs.jq` and `secrets.jq`. The `outputs` field will contain the result of `helm get manifest` for the chart after it is installed. Since the output of `helm get manifest` is list of yaml files, the `outputs` block will be a JSON array with each element being a JSON object of an individual kubernetes resource manifest.
 
 ```json
 {
@@ -201,6 +239,12 @@ After every provision, this provider will scan the template directory for files 
         ...
     },
     "connections": {
+        ...
+    },
+    "envs": {
+        ...
+    },
+    "secrets": {
         ...
     },
     "outputs": [
@@ -291,6 +335,8 @@ In this case, the input to the `artifact_api_endpoint.jq` template file would be
             }
         }
     },
+    "envs": {},
+    "secrets": {},
     "outputs": [
         {
             "apiVersion": "v1",
