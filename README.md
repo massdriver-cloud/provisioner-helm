@@ -335,7 +335,9 @@ In this case, the input to the `artifact_api_endpoint.jq` template file would be
             }
         }
     },
-    "envs": {},
+    "envs": {
+        "LOG_LEVEL": "debug"
+    },
     "secrets": {},
     "outputs": [
         {
