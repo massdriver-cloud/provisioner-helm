@@ -32,7 +32,7 @@ evaluate_checkov() {
             checkov_flags+=" --soft-fail"
         fi
 
-        checkov -d . --framework helm --var-file params_values.yaml --var-file connections_values.yaml $checkov_flags
+        checkov -d . --framework helm --var-file params_values.yaml --var-file connections_values.yaml --var-file envs_values.yaml --var-file secrets_values.yaml $checkov_flags
     fi
 }
 
@@ -75,14 +75,28 @@ cd "bundle/$MASSDRIVER_STEP_PATH"
 if [ -f connections.jq ]; then
     jq -f connections.jq "$connections_path" | yq -p=json > connections_values.yaml
 else
-    yq -p=json < "$connections_path" > connections_values.yaml
+    yq -p=json -o=yaml < "$connections_path" > connections_values.yaml
 fi
 
 # Generate parameter values YAML from params.jq or default to full JSON
 if [ -f params.jq ]; then
     jq -f params.jq "$params_path" | yq -p=json > params_values.yaml
 else
-    yq -p=json < "$params_path" > params_values.yaml
+    yq -p=json -o=yaml < "$params_path" > params_values.yaml
+fi
+
+# Generate envs values YAML from envs.jq or default to full JSON nested under "envs"
+if [ -f envs.jq ]; then
+    jq -f envs.jq "$envs_path" | yq -p=json > envs_values.yaml
+else
+    yq -p=json -o=yaml '{"envs": .}' < "$envs_path" > envs_values.yaml
+fi
+
+# Generate secrets values YAML from secrets.jq or default to full JSON nested under "secrets"
+if [ -f secrets.jq ]; then
+    jq -f secrets.jq "$secrets_path" | yq -p=json > secrets_values.yaml
+else
+    yq -p=json -o=yaml '{"secrets": .}' < "$secrets_path" > secrets_values.yaml
 fi
 
 # Determine Helm command based on deployment action
@@ -91,12 +105,12 @@ case "$MASSDRIVER_DEPLOYMENT_ACTION" in
 
   plan)
     evaluate_checkov
-    helm_command="upgrade $release_name . --dry-run -i --namespace $namespace --create-namespace -f connections_values.yaml -f params_values.yaml --debug --wait"
+    helm_command="upgrade $release_name . --dry-run -i --namespace $namespace --create-namespace -f connections_values.yaml -f params_values.yaml -f envs_values.yaml -f secrets_values.yaml --debug --wait"
     ;;
 
   provision)
     evaluate_checkov
-    helm_command="upgrade $release_name . -i --namespace $namespace --create-namespace -f connections_values.yaml -f params_values.yaml --debug --wait"
+    helm_command="upgrade $release_name . -i --namespace $namespace --create-namespace -f connections_values.yaml -f params_values.yaml -f envs_values.yaml -f secrets_values.yaml --debug --wait"
     ;;
 
   decommission)
@@ -116,7 +130,7 @@ helm $helm_command --kube-apiserver $k8s_apiserver --kube-token $k8s_token --kub
 case "$MASSDRIVER_DEPLOYMENT_ACTION" in
   provision )
     helm --kube-apiserver $k8s_apiserver --kube-token $k8s_token --kube-ca-file "$k8s_cacert_file" get manifest $release_name --namespace $namespace | yq ea -o=json '[.]' > outputs.json
-    jq -s '{params:.[0],connections:.[1],outputs:.[2]}' "$params_path" "$connections_path" outputs.json > artifact_inputs.json
+    jq -s '{params:.[0],connections:.[1],envs:.[2],secrets:.[3],outputs:.[4]}' "$params_path" "$connections_path" "$envs_path" "$secrets_path" outputs.json > artifact_inputs.json
     for artifact_file in artifact_*.jq; do
         [ -f "$artifact_file" ] || break
         field=$(echo "$artifact_file" | sed 's/^artifact_\(.*\).jq$/\1/')
