@@ -176,10 +176,10 @@ While this `connections.json` file contains all the necessary data for the postg
 ```jq connections.jq
 {
     "postgres": {
-        "hostname": .database.data.authentication.hostname
-        "port": .database.data.authentication.port
-        "user": .database.data.authentication.username
-        "password": .database.data.authentication.password
+        "hostname": .database.data.authentication.hostname,
+        "port": .database.data.authentication.port,
+        "user": .database.data.authentication.username,
+        "password": .database.data.authentication.password,
         "version": .database.specs.version
     }
 }
