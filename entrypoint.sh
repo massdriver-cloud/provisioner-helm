@@ -14,6 +14,10 @@ secrets_path="$entrypoint_dir/secrets.json"
 name_prefix=$(jq -r '.md_metadata.name_prefix' "$params_path")
 release_name=$(jq -r --arg name_prefix "$name_prefix" '.release_name // $name_prefix' "$config_path")
 namespace=$(jq -r '.namespace // "default"' "$config_path")
+debug=$(jq -r '.debug // true' "$config_path")
+timeout=$(jq -r '.timeout // empty' "$config_path")
+wait=$(jq -r '.wait // true' "$config_path")
+wait_for_jobs=$(jq -r '.wait_for_jobs // true' "$config_path")
 
 # Extract Checkov configuration
 checkov_enabled=$(jq -r '.checkov.enable // true' "$config_path")
@@ -99,22 +103,41 @@ else
     yq -p=json -o=yaml '{"secrets": .}' < "$secrets_path" > secrets_values.yaml
 fi
 
+# extract helm args from config
+helm_args=""
+
+if [ "$debug" = "true" ]; then
+    helm_args+=" --debug"
+fi
+
+if [ "$wait" = "true" ]; then
+    helm_args+=" --wait"
+fi
+
+if [ "$wait_for_jobs" = "true" ]; then
+    helm_args+=" --wait-for-jobs"
+fi
+
+if [ -n "$timeout" ]; then
+    helm_args+=" --timeout $timeout"
+fi
+
 # Determine Helm command based on deployment action
 helm_command=""
 case "$MASSDRIVER_DEPLOYMENT_ACTION" in
 
   plan)
     evaluate_checkov
-    helm_command="upgrade $release_name . --dry-run -i --namespace $namespace --create-namespace -f connections_values.yaml -f params_values.yaml -f envs_values.yaml -f secrets_values.yaml --debug --wait"
+    helm_command="upgrade $release_name . --dry-run --install --namespace $namespace --create-namespace -f connections_values.yaml -f params_values.yaml -f envs_values.yaml -f secrets_values.yaml"
     ;;
 
   provision)
     evaluate_checkov
-    helm_command="upgrade $release_name . -i --namespace $namespace --create-namespace -f connections_values.yaml -f params_values.yaml -f envs_values.yaml -f secrets_values.yaml --debug --wait"
+    helm_command="upgrade $release_name . --install --namespace $namespace --create-namespace -f connections_values.yaml -f params_values.yaml -f envs_values.yaml -f secrets_values.yaml"
     ;;
 
   decommission)
-    helm_command="uninstall $release_name --namespace $namespace --debug --wait"
+    helm_command="uninstall $release_name --namespace $namespace"
     ;;
 
   *)
@@ -124,7 +147,7 @@ case "$MASSDRIVER_DEPLOYMENT_ACTION" in
 
 esac
 
-helm $helm_command --kube-apiserver $k8s_apiserver --kube-token $k8s_token --kube-ca-file "$k8s_cacert_file"
+helm $helm_command $helm_args --kube-apiserver $k8s_apiserver --kube-token $k8s_token --kube-ca-file "$k8s_cacert_file"
 
 # Handle artifacts if deployment action is 'provision' or 'decommission'
 case "$MASSDRIVER_DEPLOYMENT_ACTION" in
