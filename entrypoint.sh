@@ -114,7 +114,7 @@ if [ "$wait" = "true" ]; then
     helm_args+=" --wait"
 fi
 
-if [ "$wait_for_jobs" = "true" ]; then
+if [ "$wait_for_jobs" = "true" ] && [ "$MASSDRIVER_DEPLOYMENT_ACTION" != "decommission" ]; then
     helm_args+=" --wait-for-jobs"
 fi
 
