@@ -1,6 +1,10 @@
 #!/bin/bash
+set -euo pipefail
 
-set -eo pipefail
+# Define colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+NC='\033[0m' # No Color (reset)
 
 entrypoint_dir="/massdriver"
 
@@ -50,7 +54,7 @@ fi
 
 # Check if k8s_auth is still empty, and exit since we don't have auth info
 if [ -z "$k8s_auth" ]; then
-  echo "Error: No kubernetes credentials found. Please refer to the provisioner documentation for specifying kubernetes credentials."
+  echo -e "${RED}Error: No kubernetes credentials found. Please refer to the provisioner documentation for specifying kubernetes credentials.${NC}"
   exit 1
 fi
 
@@ -61,15 +65,15 @@ k8s_cacert_file="${entrypoint_dir}/ca_cert.pem"
 echo "$k8s_auth" | jq -r '.data.authentication.cluster."certificate-authority-data" // empty' | base64 -d > "$k8s_cacert_file"
 
 if [ -z "$k8s_apiserver" ]; then
-  echo "Error: Missing required field "server" in kubernetes credentials. Please refer to the provisioner documentation for specifying kubernetes credentials."
+  echo -e "${RED}Error: Missing required field "server" in kubernetes credentials. Please refer to the provisioner documentation for specifying kubernetes credentials.${NC}"
   exit 1
 fi
 if [ -z "$k8s_token" ]; then
-  echo "Error: Missing required field "token" in kubernetes credentials. Please refer to the provisioner documentation for specifying kubernetes credentials."
+  echo -e "${RED}Error: Missing required field "token" in kubernetes credentials. Please refer to the provisioner documentation for specifying kubernetes credentials.${NC}"
   exit 1
 fi
 if [ ! -s "$k8s_cacert_file" ]; then
-    echo "Error: Missing required field "certificate-authority-data" in kubernetes credentials. Please refer to the provisioner documentation for specifying kubernetes credentials."
+    echo -e "${RED}Error: Missing required field "certificate-authority-data" in kubernetes credentials. Please refer to the provisioner documentation for specifying kubernetes credentials.${NC}"
     exit 1
 fi
 
@@ -141,7 +145,7 @@ case "$MASSDRIVER_DEPLOYMENT_ACTION" in
     ;;
 
   *)
-    echo "Error: Unsupported deployment action '$MASSDRIVER_DEPLOYMENT_ACTION'. Expected 'plan', 'provision', or 'decommission'."
+    echo -e "${RED}Error: Unsupported deployment action '$MASSDRIVER_DEPLOYMENT_ACTION'. Expected 'plan', 'provision', or 'decommission'.${NC}"
     exit 1
     ;;
 
