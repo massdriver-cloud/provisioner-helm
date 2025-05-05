@@ -184,7 +184,7 @@ case "$MASSDRIVER_DEPLOYMENT_ACTION" in
         [ -f "$artifact_file" ] || break
         field=$(echo "$artifact_file" | sed 's/^artifact_\(.*\).jq$/\1/')
         echo "Deleting artifact for field $field"
-        xo artifact delete -d "$field" -n "Artifact $field for helm release $release_name"
+        xo artifact delete -d "$field"
     done
     ;;
 esac
