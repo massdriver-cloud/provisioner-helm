@@ -58,6 +58,11 @@ checkov_enabled=$(jq_bool_default '.checkov.enable' true "$config_path")
 checkov_quiet=$(jq_bool_default '.checkov.quiet' true "$config_path")
 checkov_halt_on_failure=$(jq_bool_default '.checkov.halt_on_failure' false "$config_path")
 
+# Extract remote chart configuration
+chart_repo=$(jq -r '.chart.repo // empty' "$config_path")
+chart_name=$(jq -r '.chart.name // empty' "$config_path")
+chart_version=$(jq -r '.chart.version // empty' "$config_path")
+
 # Extract auth
 # Try to get Kubernetes authentication from config.json, then fall back to connections.json
 k8s_auth=$(jq -r '.kubernetes_cluster // empty' "$config_path" 2>/dev/null || true)
@@ -93,6 +98,24 @@ fi
 
 cd "bundle/$MASSDRIVER_STEP_PATH"
 
+# Determine if using remote or local chart
+use_remote_chart=false
+chart_reference="."
+
+if [ -n "$chart_repo" ] && [ -n "$chart_name" ] && [ -n "$chart_version" ]; then
+    use_remote_chart=true
+    
+    echo "Using remote Helm chart: $chart_name from $chart_repo (version $chart_version)"
+    
+    # Add the Helm repository
+    helm repo add temp-repo "$chart_repo"
+    helm repo update
+
+    chart_reference="temp-repo/$chart_name"
+else
+    echo "Using local Helm chart from current directory"
+fi
+
 # Generate connection values YAML from connections.jq or default to full JSON
 if [ -f connections.jq ]; then
     jq -f connections.jq "$connections_path" | yq -p=json > connections_values.yaml
@@ -121,6 +144,16 @@ else
     yq -p=json -o=yaml '{"secrets": .}' < "$secrets_path" > secrets_values.yaml
 fi
 
+# Build values files list
+values_files=""
+
+# Add static values.yaml if it exists
+if [ -f values.yaml ] && [ "$use_remote_chart" = true ]; then
+    values_files+=" -f values.yaml"
+fi
+
+values_files+=" -f connections_values.yaml -f params_values.yaml -f envs_values.yaml -f secrets_values.yaml"
+
 # extract helm args from config
 helm_args=""
 
@@ -142,16 +175,23 @@ fi
 
 # Determine Helm command based on deployment action
 helm_command=""
+chart_args=""
+
+# Add version specification for remote charts
+if [ "$use_remote_chart" = true ] && [ -n "$chart_version" ]; then
+    chart_args="--version $chart_version"
+fi
+
 case "$MASSDRIVER_DEPLOYMENT_ACTION" in
 
   plan)
     evaluate_checkov
-    helm_command="upgrade $release_name . --dry-run --install --namespace $namespace --create-namespace -f connections_values.yaml -f params_values.yaml -f envs_values.yaml -f secrets_values.yaml"
+    helm_command="upgrade $release_name $chart_reference --dry-run --install --namespace $namespace --create-namespace $values_files $chart_args"
     ;;
 
   provision)
     evaluate_checkov
-    helm_command="upgrade $release_name . --install --namespace $namespace --create-namespace -f connections_values.yaml -f params_values.yaml -f envs_values.yaml -f secrets_values.yaml"
+    helm_command="upgrade $release_name $chart_reference --install --namespace $namespace --create-namespace $values_files $chart_args"
     ;;
 
   decommission)
@@ -166,6 +206,11 @@ case "$MASSDRIVER_DEPLOYMENT_ACTION" in
 esac
 
 helm $helm_command $helm_args --kube-apiserver $k8s_apiserver --kube-token $k8s_token --kube-ca-file "$k8s_cacert_file"
+
+# Clean up temporary repository if we added one
+if [ "$use_remote_chart" = true ]; then
+    helm repo remove temp-repo 2>/dev/null || true
+fi
 
 # Handle artifacts if deployment action is 'provision' or 'decommission'
 case "$MASSDRIVER_DEPLOYMENT_ACTION" in
