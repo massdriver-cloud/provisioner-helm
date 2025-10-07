@@ -61,7 +61,7 @@ checkov_halt_on_failure=$(jq_bool_default '.checkov.halt_on_failure' false "$con
 # Extract remote chart configuration
 chart_repo=$(jq -r '.chart.repo // empty' "$config_path")
 chart_name=$(jq -r '.chart.name // empty' "$config_path")
-chart_version=$(jq -r '.chart.version // empty' "$config_path")
+chart_version=$(jq -r '.chart.version // "latest"' "$config_path")
 
 # Extract auth
 # Try to get Kubernetes authentication from config.json, then fall back to connections.json
