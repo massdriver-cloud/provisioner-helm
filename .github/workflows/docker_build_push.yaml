@@ -9,7 +9,7 @@ jobs:
 
     strategy:
       matrix:
-        helm_version: [3.17.0]  # Full semver versions
+        helm_version: [3.19.0]  # Full semver versions
 
     steps:
       - name: Checkout repository
