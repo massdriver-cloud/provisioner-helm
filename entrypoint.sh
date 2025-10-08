@@ -219,7 +219,7 @@ if [ "$use_remote_chart" = true ]; then
     helm repo remove temp-repo 2>/dev/null || true
 fi
 
-# Handle artifacts if deployment action is 'provision' or 'decommission'
+# Create artifacts if deployment action is 'provision'
 case "$MASSDRIVER_DEPLOYMENT_ACTION" in
   provision )
     helm --kube-apiserver $k8s_apiserver --kube-token $k8s_token --kube-ca-file "$k8s_cacert_file" get manifest $release_name --namespace $namespace | yq ea -o=json '[.]' > outputs.json
@@ -229,14 +229,6 @@ case "$MASSDRIVER_DEPLOYMENT_ACTION" in
         field=$(echo "$artifact_file" | sed 's/^artifact_\(.*\).jq$/\1/')
         echo "Creating artifact for field $field"
         jq -f "$artifact_file" artifact_inputs.json | xo artifact publish -d "$field" -n "Artifact $field for helm release $release_name" -f -
-    done
-    ;;
-  decommission )
-    for artifact_file in artifact_*.jq; do
-        [ -f "$artifact_file" ] || break
-        field=$(echo "$artifact_file" | sed 's/^artifact_\(.*\).jq$/\1/')
-        echo "Deleting artifact for field $field"
-        xo artifact delete -d "$field"
     done
     ;;
 esac
