@@ -61,7 +61,7 @@ checkov_halt_on_failure=$(jq_bool_default '.checkov.halt_on_failure' false "$con
 # Extract remote chart configuration
 chart_repo=$(jq -r '.chart.repo // empty' "$config_path")
 chart_name=$(jq -r '.chart.name // empty' "$config_path")
-chart_version=$(jq -r '.chart.version // "latest"' "$config_path")
+chart_version=$(jq -r '.chart.version // empty' "$config_path")
 
 # Extract auth
 # Try to get Kubernetes authentication from config.json, then fall back to connections.json
@@ -112,6 +112,13 @@ if [ -n "$chart_repo" ] && [ -n "$chart_name" ] && [ -n "$chart_version" ]; then
     helm repo update
 
     chart_reference="temp-repo/$chart_name"
+elif [ -n "$chart_repo" ] || [ -n "$chart_name" ] || [ -n "$chart_version" ]; then
+    echo -e "${RED}Error: Remote chart configuration is incomplete. If specifying a remote chart, all three fields must be provided: chart.repo, chart.name, and chart.version.${NC}"
+    echo -e "${RED}Currently specified:${NC}"
+    [ -n "$chart_repo" ] && echo -e "${RED}  - chart.repo: $chart_repo${NC}" || echo -e "${RED}  - chart.repo: <missing>${NC}"
+    [ -n "$chart_name" ] && echo -e "${RED}  - chart.name: $chart_name${NC}" || echo -e "${RED}  - chart.name: <missing>${NC}"
+    [ -n "$chart_version" ] && echo -e "${RED}  - chart.version: $chart_version${NC}" || echo -e "${RED}  - chart.version: <missing>${NC}"
+    exit 1
 else
     echo "Using local Helm chart from current directory"
 fi
