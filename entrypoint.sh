@@ -102,22 +102,26 @@ cd "bundle/$MASSDRIVER_STEP_PATH"
 use_remote_chart=false
 chart_reference="."
 
-if [ -n "$chart_repo" ] && [ -n "$chart_name" ] && [ -n "$chart_version" ]; then
+if [ -n "$chart_repo" ] && [ -n "$chart_name" ]; then
     use_remote_chart=true
     
-    echo "Using remote Helm chart: $chart_name from $chart_repo (version $chart_version)"
+    if [ -n "$chart_version" ]; then
+        echo "Using remote Helm chart: $chart_name from $chart_repo (version $chart_version)"
+    else
+        echo "Using remote Helm chart: $chart_name from $chart_repo (latest version)"
+    fi
     
     # Add the Helm repository
     helm repo add temp-repo "$chart_repo"
     helm repo update
 
     chart_reference="temp-repo/$chart_name"
-elif [ -n "$chart_repo" ] || [ -n "$chart_name" ] || [ -n "$chart_version" ]; then
-    echo -e "${RED}Error: Remote chart configuration is incomplete. If specifying a remote chart, all three fields must be provided: chart.repo, chart.name, and chart.version.${NC}"
+elif [ -n "$chart_repo" ] || [ -n "$chart_name" ]; then
+    echo -e "${RED}Error: Remote chart configuration is incomplete. If specifying a remote chart, both chart.repo and chart.name must be provided. chart.version is optional.${NC}"
     echo -e "${RED}Currently specified:${NC}"
     [ -n "$chart_repo" ] && echo -e "${RED}  - chart.repo: $chart_repo${NC}" || echo -e "${RED}  - chart.repo: <missing>${NC}"
     [ -n "$chart_name" ] && echo -e "${RED}  - chart.name: $chart_name${NC}" || echo -e "${RED}  - chart.name: <missing>${NC}"
-    [ -n "$chart_version" ] && echo -e "${RED}  - chart.version: $chart_version${NC}" || echo -e "${RED}  - chart.version: <missing>${NC}"
+    [ -n "$chart_version" ] && echo -e "${RED}  - chart.version: $chart_version (optional)${NC}" || echo -e "${RED}  - chart.version: <not specified, will use latest>${NC}"
     exit 1
 else
     echo "Using local Helm chart from current directory"
