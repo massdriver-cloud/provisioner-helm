@@ -52,6 +52,7 @@ debug=$(jq_bool_default '.debug' true "$config_path")
 timeout=$(jq -r '.timeout // empty' "$config_path")
 wait=$(jq_bool_default '.wait' true "$config_path")
 wait_for_jobs=$(jq_bool_default '.wait_for_jobs' true "$config_path")
+skip_crds=$(jq_bool_default '.skip_crds' false "$config_path")
 
 # Extract Checkov configuration
 checkov_enabled=$(jq_bool_default '.checkov.enable' true "$config_path")
@@ -62,6 +63,7 @@ checkov_halt_on_failure=$(jq_bool_default '.checkov.halt_on_failure' false "$con
 chart_repo=$(jq -r '.chart.repo // empty' "$config_path")
 chart_name=$(jq -r '.chart.name // empty' "$config_path")
 chart_version=$(jq -r '.chart.version // empty' "$config_path")
+chart_oci=$(jq -r '.chart.oci // empty' "$config_path")
 
 # Extract auth
 # Try to get Kubernetes authentication from config.json, then fall back to connections.json
@@ -98,12 +100,30 @@ fi
 
 cd "bundle/$MASSDRIVER_STEP_PATH"
 
-# Determine if using remote or local chart
-use_remote_chart=false
+# Determine chart type and set up chart reference
+chart_type="local"
 chart_reference="."
 
-if [ -n "$chart_repo" ] && [ -n "$chart_name" ]; then
-    use_remote_chart=true
+# OCI-based chart
+if [ -n "$chart_oci" ]; then
+    chart_type="oci"
+    
+    # Ensure OCI prefix
+    if [[ "$chart_oci" == oci://* ]]; then
+        chart_reference="$chart_oci"
+    else
+        chart_reference="oci://$chart_oci"
+    fi
+    
+    if [ -n "$chart_version" ]; then
+        echo "Using OCI Helm chart: $chart_reference (version $chart_version)"
+    else
+        echo "Using OCI Helm chart: $chart_reference (latest version)"
+    fi
+
+# Traditional HTTP(S) repository chart
+elif [ -n "$chart_repo" ] && [ -n "$chart_name" ]; then
+    chart_type="remote"
     
     if [ -n "$chart_version" ]; then
         echo "Using remote Helm chart: $chart_name from $chart_repo (version $chart_version)"
@@ -114,8 +134,10 @@ if [ -n "$chart_repo" ] && [ -n "$chart_name" ]; then
     # Add the Helm repository
     helm repo add temp-repo "$chart_repo"
     helm repo update
-
+    
     chart_reference="temp-repo/$chart_name"
+
+# Incomplete remote chart configuration
 elif [ -n "$chart_repo" ] || [ -n "$chart_name" ]; then
     echo -e "${RED}Error: Remote chart configuration is incomplete. If specifying a remote chart, both chart.repo and chart.name must be provided. chart.version is optional.${NC}"
     echo -e "${RED}Currently specified:${NC}"
@@ -123,7 +145,11 @@ elif [ -n "$chart_repo" ] || [ -n "$chart_name" ]; then
     [ -n "$chart_name" ] && echo -e "${RED}  - chart.name: $chart_name${NC}" || echo -e "${RED}  - chart.name: <missing>${NC}"
     [ -n "$chart_version" ] && echo -e "${RED}  - chart.version: $chart_version (optional)${NC}" || echo -e "${RED}  - chart.version: <not specified, will use latest>${NC}"
     exit 1
+
+# Local chart
 else
+    chart_type="local"
+    chart_reference="."
     echo "Using local Helm chart from current directory"
 fi
 
@@ -158,8 +184,8 @@ fi
 # Build values files list
 values_files=""
 
-# Add static values.yaml if it exists
-if [ -f values.yaml ] && [ "$use_remote_chart" = true ]; then
+# Add static values.yaml if it exists (not for local charts which use their own)
+if [ -f values.yaml ] && [ "$chart_type" != "local" ]; then
     values_files+=" -f values.yaml"
 fi
 
@@ -184,12 +210,16 @@ if [ -n "$timeout" ]; then
     helm_args+=" --timeout $timeout"
 fi
 
+if [ "$skip_crds" = "true" ] && [ "$MASSDRIVER_DEPLOYMENT_ACTION" != "decommission" ]; then
+    helm_args+=" --skip-crds"
+fi
+
 # Determine Helm command based on deployment action
 helm_command=""
 chart_args=""
 
-# Add version specification for remote charts
-if [ "$use_remote_chart" = true ] && [ -n "$chart_version" ]; then
+# Add version specification for remote and OCI charts
+if [ "$chart_type" != "local" ] && [ -n "$chart_version" ]; then
     chart_args="--version $chart_version"
 fi
 
@@ -218,8 +248,8 @@ esac
 
 helm $helm_command $helm_args --kube-apiserver $k8s_apiserver --kube-token $k8s_token --kube-ca-file "$k8s_cacert_file"
 
-# Clean up temporary repository if we added one
-if [ "$use_remote_chart" = true ]; then
+# Clean up temporary repository if we added one (only for remote charts)
+if [ "$chart_type" = "remote" ]; then
     helm repo remove temp-repo 2>/dev/null || true
 fi
 
