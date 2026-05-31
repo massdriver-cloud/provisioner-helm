@@ -12,7 +12,8 @@ jobs:
       max-parallel: 1
       matrix:
         include: # Full semver versions
-          - helm_version: 3.19.0
+          - helm_version: 3.21.0
+          - helm_version: 4.2.0
             is_latest: true
 
     steps:
