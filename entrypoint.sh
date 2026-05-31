@@ -35,16 +35,16 @@ jq_bool_default() {
 evaluate_checkov() {
     if [ "$checkov_enabled" = "true" ]; then
         echo "Evaluating Checkov policies..."
-        checkov_flags=""
+        checkov_flags=()
 
         if [ "$checkov_quiet" = "true" ]; then
-            checkov_flags+=" --quiet"
+            checkov_flags+=(--quiet)
         fi
         if [ "$checkov_halt_on_failure" = "false" ]; then
-            checkov_flags+=" --soft-fail"
+            checkov_flags+=(--soft-fail)
         fi
 
-        checkov -d . --framework helm --var-file params_values.yaml --var-file connections_values.yaml --var-file envs_values.yaml --var-file secrets_values.yaml $checkov_flags
+        checkov -d . --framework helm --var-file params_values.yaml --var-file connections_values.yaml --var-file envs_values.yaml --var-file secrets_values.yaml "${checkov_flags[@]}"
     fi
 }
 
@@ -69,36 +69,45 @@ chart_name=$(jq -r '.chart.name // empty' "$config_path")
 chart_version=$(jq -r '.chart.version // empty' "$config_path")
 chart_oci=$(jq -r '.chart.oci // empty' "$config_path")
 
-# Extract auth
-# Try to get Kubernetes authentication from config.json, then fall back to connections.json
-k8s_auth=$(jq -r '.kubernetes_cluster // empty' "$config_path" 2>/dev/null || true)
+# ---------------------------------------------------------------------------
+# Kubernetes authentication
+#
+# Token auth is resolved from the kubernetes_cluster connection's
+# `authentication` block, with config.kubernetes_cluster overlaid on top per
+# field. This gives a "connection default, config override" model: provide the
+# whole credential through the connection, override a single field, or remap a
+# differently-shaped resource type entirely through config.
+#
+# Field resolution (config overlays the connection per-field via deep merge):
+#   1. config.kubernetes_cluster.authentication            (override, top-level)
+#   2. connections.kubernetes_cluster.authentication       (connection, top-level) } first
+#   3. connections.kubernetes_cluster.data.authentication  (legacy conn, .data)    } found
+#
+# The `.data` sub-block fallback is only honored on the connection side for
+# backwards compatibility; config overrides use the canonical top-level shape.
+# ---------------------------------------------------------------------------
 
-if [ -z "$k8s_auth" ]; then
-  k8s_auth=$(jq -r '.kubernetes_cluster // empty' "$connections_path" 2>/dev/null || true)
-fi
+auth=$(jq -s '
+    (.[1].kubernetes_cluster.authentication // .[1].kubernetes_cluster.data.authentication // {}) as $conn
+  | (.[0].kubernetes_cluster.authentication // {})                                            as $cfg
+  | $conn * $cfg
+' "$config_path" "$connections_path")
 
-# Check if k8s_auth is still empty, and exit since we don't have auth info
-if [ -z "$k8s_auth" ]; then
-  echo -e "${RED}Error: No kubernetes credentials found. Please refer to the provisioner documentation for specifying kubernetes credentials.${NC}"
-  exit 1
-fi
-
-# Extract fields from kubernetes_cluster and validate they are not empty
-k8s_apiserver=$(echo "$k8s_auth" | jq -r '.authentication.cluster.server // .data.authentication.cluster.server // empty')
-k8s_token=$(echo "$k8s_auth" | jq -r '.authentication.user.token // .data.authentication.user.token // empty')
+k8s_apiserver=$(echo "$auth" | jq -r '.cluster.server // empty')
+k8s_token=$(echo "$auth" | jq -r '.user.token // empty')
 k8s_cacert_file="${entrypoint_dir}/ca_cert.pem"
-echo "$k8s_auth" | jq -r '.authentication.cluster."certificate-authority-data" // .data.authentication.cluster."certificate-authority-data" // empty' | base64 -d > "$k8s_cacert_file"
+echo "$auth" | jq -r '.cluster."certificate-authority-data" // empty' | base64 -d > "$k8s_cacert_file"
 
 if [ -z "$k8s_apiserver" ]; then
-  echo -e "${RED}Error: Missing required field "server" in kubernetes credentials. Please refer to the provisioner documentation for specifying kubernetes credentials.${NC}"
+  echo -e "${RED}Error: Missing required field \"server\" in kubernetes credentials. Please refer to the provisioner documentation for specifying kubernetes credentials.${NC}"
   exit 1
 fi
 if [ -z "$k8s_token" ]; then
-  echo -e "${RED}Error: Missing required field "token" in kubernetes credentials. Please refer to the provisioner documentation for specifying kubernetes credentials.${NC}"
+  echo -e "${RED}Error: Missing required field \"token\" in kubernetes credentials. Please refer to the provisioner documentation for specifying kubernetes credentials.${NC}"
   exit 1
 fi
 if [ ! -s "$k8s_cacert_file" ]; then
-    echo -e "${RED}Error: Missing required field "certificate-authority-data" in kubernetes credentials. Please refer to the provisioner documentation for specifying kubernetes credentials.${NC}"
+    echo -e "${RED}Error: Missing required field \"certificate-authority-data\" in kubernetes credentials. Please refer to the provisioner documentation for specifying kubernetes credentials.${NC}"
     exit 1
 fi
 
@@ -240,7 +249,9 @@ case "$MASSDRIVER_DEPLOYMENT_ACTION" in
     ;;
 
   decommission)
-    helm_command=(uninstall "$release_name" --namespace "$namespace")
+    # --ignore-not-found so a missing release doesn't abort the run before the
+    # resource-cleanup loop below gets a chance to delete published resources.
+    helm_command=(uninstall "$release_name" --namespace "$namespace" --ignore-not-found)
     ;;
 
   *)

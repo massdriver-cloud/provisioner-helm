@@ -9,7 +9,7 @@ ARG HELM_VERSION
 ARG CHECKOV_VERSION
 
 ENV DEBIAN_FRONTEND=noninteractive
-RUN apt update && apt install -y curl unzip make jq && \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl unzip jq && \
     rm -rf /var/lib/apt/lists/* && \
     curl -s https://api.github.com/repos/massdriver-cloud/xo/releases/latest | jq -r '.assets[] | select(.name | contains("linux-amd64")) | .browser_download_url' | xargs curl -sSL -o xo.tar.gz && tar -xvf xo.tar.gz -C /tmp && mv /tmp/xo /usr/local/bin/ && rm *.tar.gz && \
     curl -sSL https://get.helm.sh/helm-v${HELM_VERSION}-linux-amd64.tar.gz > helm.tar.gz && tar -xzf helm.tar.gz -C /usr/local/bin --strip-components=1 linux-amd64/helm && \
