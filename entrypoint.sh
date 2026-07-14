@@ -276,7 +276,7 @@ case "$MASSDRIVER_DEPLOYMENT_ACTION" in
     for resource_file in artifact_*.jq resource_*.jq; do
         [ -f "$resource_file" ] || continue
         field=$(echo "$resource_file" | sed -E 's/^(artifact|resource)_(.*)\.jq$/\2/')
-        echo -e "\nCreating resource \"$MASSDRIVER_INSTANCE_ID-$field\" in Massdriver..."
+        echo -e "\nCreating resource \"$MASSDRIVER_INSTANCE_ID.$field\" in Massdriver..."
         jq -f "$resource_file" resource_inputs.json | xo resource publish -d "$field" -n "Resource $field for helm release $release_name" -f -
     done
     ;;
@@ -285,7 +285,7 @@ case "$MASSDRIVER_DEPLOYMENT_ACTION" in
     for resource_file in artifact_*.jq resource_*.jq; do
         [ -f "$resource_file" ] || continue
         field=$(echo "$resource_file" | sed -E 's/^(artifact|resource)_(.*)\.jq$/\2/')
-        echo -e "\nDeleting resource \"$MASSDRIVER_INSTANCE_ID-$field\" from Massdriver..."
+        echo -e "\nDeleting resource \"$MASSDRIVER_INSTANCE_ID.$field\" from Massdriver..."
         xo resource delete -d "$field" || echo -e "${YELLOW}Warning: failed to delete resource for field $field. Continuing decommission.${NC}"
     done
     ;;
