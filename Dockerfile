@@ -7,14 +7,18 @@ ARG UID=10001
 FROM ${RUN_IMG} AS build
 ARG HELM_VERSION
 ARG CHECKOV_VERSION
+# set automatically by buildx to the platform being built (amd64, arm64)
+ARG TARGETARCH
 
+# checkov names its amd64 release X86_64 rather than amd64
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl unzip jq && \
     rm -rf /var/lib/apt/lists/* && \
-    curl -s https://api.github.com/repos/massdriver-cloud/xo/releases/latest | jq -r '.assets[] | select(.name | contains("linux-amd64")) | .browser_download_url' | xargs curl -sSL -o xo.tar.gz && tar -xvf xo.tar.gz -C /tmp && mv /tmp/xo /usr/local/bin/ && rm *.tar.gz && \
-    curl -sSL https://get.helm.sh/helm-v${HELM_VERSION}-linux-amd64.tar.gz > helm.tar.gz && tar -xzf helm.tar.gz -C /usr/local/bin --strip-components=1 linux-amd64/helm && \
-    curl -sSL https://github.com/bridgecrewio/checkov/releases/download/${CHECKOV_VERSION}/checkov_linux_X86_64.zip > checkov.zip && unzip checkov.zip && mv dist/checkov /usr/local/bin/ && rm *.zip && \
-    curl -sSL https://github.com/mikefarah/yq/releases/download/v4.40.5/yq_linux_amd64 > /usr/local/bin/yq && chmod a+x /usr/local/bin/yq
+    curl -s https://api.github.com/repos/massdriver-cloud/xo/releases/latest | jq -r --arg arch "linux-${TARGETARCH}" '.assets[] | select(.name | contains($arch)) | .browser_download_url' | xargs curl -sSL -o xo.tar.gz && tar -xvf xo.tar.gz -C /tmp && mv /tmp/xo /usr/local/bin/ && rm *.tar.gz && \
+    curl -sSL https://get.helm.sh/helm-v${HELM_VERSION}-linux-${TARGETARCH}.tar.gz > helm.tar.gz && tar -xzf helm.tar.gz -C /usr/local/bin --strip-components=1 linux-${TARGETARCH}/helm && \
+    CHECKOV_ARCH=$([ "$TARGETARCH" = "amd64" ] && echo X86_64 || echo "$TARGETARCH") && \
+    curl -sSL https://github.com/bridgecrewio/checkov/releases/download/${CHECKOV_VERSION}/checkov_linux_${CHECKOV_ARCH}.zip > checkov.zip && unzip checkov.zip && mv dist/checkov /usr/local/bin/ && rm *.zip && \
+    curl -sSL https://github.com/mikefarah/yq/releases/download/v4.40.5/yq_linux_${TARGETARCH} > /usr/local/bin/yq && chmod a+x /usr/local/bin/yq
 
 FROM ${RUN_IMG}
 ARG USER
